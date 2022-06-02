@@ -61,9 +61,9 @@ wss.on("connection", (_ws:WebSocket) => {
 
     let ws = _ws as ExtWebSocket;
 
-    let uuid = genUUID();
+    ws.uuid = genUUID();
 
-    newPlayer(uuid);
+    newPlayer(ws.uuid);
 
     ws.on("message", (message: string) => {
 
@@ -74,13 +74,20 @@ wss.on("connection", (_ws:WebSocket) => {
                 case "connect":
                     if (typeof jsonData.username == "string" && jsonData.username != ""){
                         clients[ws.uuid].username = jsonData.username;
+                        ws.send(JSON.stringify({method:"sendSelf",  id: ws.uuid}));
                     }
                     else{
                         ws.close();
                     }
                     break;
                 
-                
+                case "update":
+
+                    //TODO check for must be in radians
+
+                    clients[ws.uuid].heading = jsonData.data.heading;
+                    
+                    break;
 
 
                 default:
@@ -93,6 +100,10 @@ wss.on("connection", (_ws:WebSocket) => {
             console.log("MESSAGE =>",  message);
             console.log(error);
         }
+    });
+
+    ws.on("close", ()=>{
+        delete clients[ws.uuid];
     });
 });
 
@@ -115,17 +126,22 @@ setInterval(()=>{
 
         let nextPoint = {
             x: data.speed * Math.cos(data.heading) + previousPoint.x,
-            y: data.speed * -Math.cos(data.heading) + previousPoint.y,
+            y: data.speed * Math.sin(data.heading) + previousPoint.y,
         } as SnakePoint;
+
+        console.log("heading", data.heading)
+        console.log("nextPos", nextPoint)
+
 
         nextPoint = clampPoint(nextPoint);
 
         data.body.unshift(nextPoint);
         data.body.pop();
-
-        //update client
-        socket.send(JSON.stringify({method: "update", data: data}));
     })
+
+    broadcast(JSON.stringify({method: "update", data: clients}));
+
+    
 
     
 }, 1000/ticksPerSecond);
@@ -133,9 +149,7 @@ setInterval(()=>{
 
 
 
-
-
-
+// -------------- functions --------------
 
 function genUUID():number{
     let uuid = Math.floor(Math.random() * 99999999);
@@ -172,6 +186,9 @@ function broadcast(message:string){
 }
 
 function findSpawnPos(){
+
+    return {x:0, y:0};
+
     return {x:Math.random() * mapWidth, y:Math.random() * mapHeight};
 }
 
