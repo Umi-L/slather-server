@@ -1,0 +1,20 @@
+{
+  "name": "phonetonic",
+  "version": "1.0.0",
+  "description": "gartic phone game",
+  "main": "index.js",
+  "scripts": {},
+  "author": "umi",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.1",
+    "ws": "^7.5.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.13",
+    "@types/ws": "^8.5.3",
+    "copyfiles": "^2.4.1",
+    "rimraf": "^3.0.2",
+    "typescript": "^4.6.4"
+  }
+}
