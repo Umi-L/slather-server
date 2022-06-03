@@ -4,15 +4,18 @@ const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
 //10 pixels per unit
+const ticksPerSecond = 20;
+const perfectTickTime = 1000 / ticksPerSecond;
 let mapWidth = 3000;
 let mapHeight = 3000;
 const maxOrbs = 70;
 let foodOrbs = [];
 let newOrbs = [];
 let defaultLen = 7;
+let defaultRadius = 10;
 //units per second
-let defaultSpeed = 1000;
-let ticksPerSecond = 20;
+let defaultSpeed = 400;
+let lastUpdate = Date.now();
 const clients = {};
 const app = express();
 //initialize a simple http server
@@ -38,7 +41,8 @@ wss.on("connection", (_ws) => {
                                 mapWidth: mapWidth,
                                 mapHeight: mapHeight,
                                 speed: clients[ws.uuid].speed,
-                                orbs: foodOrbs
+                                orbs: foodOrbs,
+                                radius: clients[ws.uuid].radius,
                             }
                         }));
                     }
@@ -72,12 +76,13 @@ server.listen(process.env.PORT || 8999, () => {
 });
 console.log("starting mainloop");
 setInterval(() => {
+    let now = Date.now();
+    let dt = (now - lastUpdate) / 1000; // perfectTickTime;
+    lastUpdate = now;
     if (foodOrbs.length < maxOrbs) {
-        makeOrb(Math.random() * 0.1);
-        console.log("orbMade");
+        makeOrb(Math.random() * 0.3);
     }
     wss.clients.forEach((_socket) => {
-        let dt = ticksPerSecond / 1000;
         let socket = _socket;
         let data = clients[socket.uuid];
         //move snake forward
@@ -90,15 +95,39 @@ setInterval(() => {
         data.body.unshift(nextPoint);
         data.body.pop();
         for (let i = foodOrbs.length - 1; i >= 0; i--) {
-            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < 20) {
+            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < data.radius * 2 + 10) {
                 data.length += foodOrbs[i].value;
-                console.log(data.length);
+                data.radius = defaultRadius + data.length / 2;
                 foodOrbs.splice(i, 1);
                 while (data.body.length < Math.floor(data.length)) {
                     data.body.push(data.body[-1]);
                 }
             }
         }
+    });
+    wss.clients.forEach((_socket) => {
+        let socket = _socket;
+        let data = clients[socket.uuid];
+        wss.clients.forEach((_ws) => {
+            let ws = _ws;
+            if (ws.uuid != socket.uuid) {
+                let otherData = clients[ws.uuid];
+                for (let i = 1; i < otherData.body.length; i++) {
+                    if (!otherData.body[i])
+                        continue;
+                    if (pointDist(data.body[0].x, data.body[0].y, otherData.body[i].x, otherData.body[i].y) < (data.radius + otherData.radius)) {
+                        socket.send(JSON.stringify({ method: "dead" }));
+                        socket.close();
+                        for (let j = 0; j < data.body.length; j++) {
+                            if (data.body[j]) {
+                                makeOrbAtPos(data.body[j].x + Math.random() * 10, data.body[j].y + Math.random() * 10, data.length / data.body.length);
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+        });
     });
     broadcast(JSON.stringify({ method: "update", data: clients, orbs: newOrbs }));
     foodOrbs = foodOrbs.concat(newOrbs);
@@ -121,6 +150,7 @@ function newPlayer(uuid) {
         body: fillArray({ x: pos.x, y: pos.y }, defaultLen),
         heading: 0,
         speed: defaultSpeed,
+        radius: defaultRadius + defaultLen / 2
     };
     clients[uuid] = data;
 }
@@ -154,7 +184,11 @@ function makeOrb(value) {
     let orb = { x: Math.random() * mapWidth, y: Math.random() * mapHeight, value: value };
     newOrbs.push(orb);
 }
+function makeOrbAtPos(x, y, value) {
+    let orb = { x: x, y: y, value: value };
+    newOrbs.push(orb);
+}
 function pointDist(x1, y1, x2, y2) {
-    return Math.abs(Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2)));
+    return Math.hypot(x2 - x1, y2 - y1);
 }
 //# sourceMappingURL=index.js.map

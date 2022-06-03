@@ -5,6 +5,9 @@ import * as WebSocket from "ws";
 
 //10 pixels per unit
 
+const ticksPerSecond = 20;
+const perfectTickTime = 1000 / ticksPerSecond;
+
 let mapWidth = 3000;
 let mapHeight = 3000;
 
@@ -13,16 +16,19 @@ let foodOrbs:FoodOrb[] = [];
 let newOrbs:FoodOrb[] = [];
 
 let defaultLen = 7;
+let defaultRadius = 10;
 
 //units per second
-let defaultSpeed = 1000;
+let defaultSpeed = 400;
 
-let ticksPerSecond = 20;
+
+let lastUpdate:number = Date.now();
 
 export interface ExtWebSocket extends WebSocket {
     isAlive: boolean;
     uuid: number;
 }
+
 
 interface PlayerData{
     username:string;
@@ -30,6 +36,7 @@ interface PlayerData{
     body: SnakePoint[];
     heading: number;
     speed: number;
+    radius: number;
 }
 
 interface SnakePoint{
@@ -84,7 +91,8 @@ wss.on("connection", (_ws:WebSocket) => {
                                     mapWidth: mapWidth, 
                                     mapHeight: mapHeight, 
                                     speed: clients[ws.uuid].speed,
-                                    orbs:foodOrbs
+                                    orbs:foodOrbs,
+                                    radius: clients[ws.uuid].radius,
                                 }
                             }));
                     }
@@ -128,15 +136,16 @@ console.log("starting mainloop");
 
 setInterval(()=>{
 
+    let now = Date.now();
+    let dt = (now - lastUpdate) / 1000// perfectTickTime;
+    lastUpdate = now;
+
+
     if (foodOrbs.length < maxOrbs){
-        makeOrb(Math.random()*0.1);
-        console.log("orbMade")
+        makeOrb(Math.random()*0.3);
     }
 
     wss.clients.forEach((_socket:WebSocket)=>{
-
-        let dt = ticksPerSecond / 1000;
-
         let socket = _socket as ExtWebSocket;
 
         let data = clients[socket.uuid];
@@ -157,10 +166,10 @@ setInterval(()=>{
 
         for (let i = foodOrbs.length - 1; i >= 0; i--)
         {
-            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < 20){
+            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < data.radius*2 + 10){
                 data.length += foodOrbs[i].value;
 
-                console.log(data.length);
+                data.radius = defaultRadius + data.length / 2;
 
                 foodOrbs.splice(i, 1);
 
@@ -168,8 +177,39 @@ setInterval(()=>{
                     data.body.push(data.body[-1]);
                 }
             }
-        }            
+        }
     })
+
+    wss.clients.forEach((_socket:WebSocket)=>{
+        let socket = _socket as ExtWebSocket;
+        let data = clients[socket.uuid];
+
+        wss.clients.forEach((_ws:WebSocket)=>{
+            let ws = _ws as ExtWebSocket;
+
+            if (ws.uuid != socket.uuid){
+                let otherData = clients[ws.uuid];
+
+                for(let i = 1; i < otherData.body.length; i++){
+                    if (!otherData.body[i])
+                        continue;
+                    if (pointDist(data.body[0].x, data.body[0].y, otherData.body[i].x, otherData.body[i].y) < (data.radius + otherData.radius)){
+                        socket.send(JSON.stringify({method:"dead"}));
+
+                        socket.close();
+
+                        for (let j = 0; j < data.body.length; j++){
+                            if (data.body[j]){
+                                makeOrbAtPos(data.body[j].x + Math.random()*10, data.body[j].y + Math.random()*10, data.length/data.body.length);
+                            }
+                        }
+
+                        return;
+                    }
+                }
+            }
+        })
+    });
 
     broadcast(JSON.stringify({method: "update", data: clients, orbs: newOrbs}));
 
@@ -207,6 +247,7 @@ function newPlayer(uuid:number): void{
         body: fillArray({x:pos.x, y:pos.y} as SnakePoint, defaultLen),
         heading: 0,
         speed: defaultSpeed,
+        radius: defaultRadius + defaultLen / 2
     }
 
     clients[uuid] = data;
@@ -246,6 +287,11 @@ function makeOrb(value:number){
     newOrbs.push(orb);
 }
 
+function makeOrbAtPos(x:number, y:number, value:number){
+    let orb = {x:x, y:y, value: value} as FoodOrb;
+    newOrbs.push(orb);
+}
+
 function pointDist(x1:number, y1:number, x2:number, y2:number){
-    return Math.abs(Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2)))
+    return Math.hypot(x2-x1, y2-y1)
 }
