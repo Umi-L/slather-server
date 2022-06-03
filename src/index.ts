@@ -20,6 +20,8 @@ let defaultRadius = 10;
 
 //units per second
 let defaultSpeed = 400;
+let boostingSpeed = 600;
+let boostingPentalty = 0.01;
 
 
 let lastUpdate:number = Date.now();
@@ -106,6 +108,19 @@ wss.on("connection", (_ws:WebSocket) => {
                     //TODO check for must be in radians
 
                     clients[ws.uuid].heading = jsonData.data.heading;
+
+                    if (jsonData.data.boosting && clients[ws.uuid].length > 3){
+                        clients[ws.uuid].speed = boostingSpeed;
+
+                        clients[ws.uuid].length -= boostingPentalty;
+
+                        while(clients[ws.uuid].body.length > clients[ws.uuid].length){
+                            clients[ws.uuid].body.pop();
+                        }
+                    }
+                    else{
+                        clients[ws.uuid].speed = defaultSpeed;
+                    }
                     
                     break;
 
