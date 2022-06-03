@@ -5,15 +5,17 @@ import * as WebSocket from "ws";
 
 //10 pixels per unit
 
-let mapWidth = 5000;
-let mapHeight = 5000;
+let mapWidth = 3000;
+let mapHeight = 3000;
 
+const maxOrbs = 70;
 let foodOrbs:FoodOrb[] = [];
+let newOrbs:FoodOrb[] = [];
 
-let defaultLen = 10;
+let defaultLen = 7;
 
 //units per second
-let defaultSpeed = 2;
+let defaultSpeed = 1000;
 
 let ticksPerSecond = 20;
 
@@ -74,7 +76,17 @@ wss.on("connection", (_ws:WebSocket) => {
                 case "connect":
                     if (typeof jsonData.username == "string" && jsonData.username != ""){
                         clients[ws.uuid].username = jsonData.username;
-                        ws.send(JSON.stringify({method:"sendSelf",  id: ws.uuid}));
+                        ws.send(JSON.stringify(
+                            {
+                                method:"initialData",  
+                                data: {
+                                    id: ws.uuid, 
+                                    mapWidth: mapWidth, 
+                                    mapHeight: mapHeight, 
+                                    speed: clients[ws.uuid].speed,
+                                    orbs:foodOrbs
+                                }
+                            }));
                     }
                     else{
                         ws.close();
@@ -116,7 +128,15 @@ console.log("starting mainloop");
 
 setInterval(()=>{
 
+    if (foodOrbs.length < maxOrbs){
+        makeOrb(Math.random()*0.1);
+        console.log("orbMade")
+    }
+
     wss.clients.forEach((_socket:WebSocket)=>{
+
+        let dt = ticksPerSecond / 1000;
+
         let socket = _socket as ExtWebSocket;
 
         let data = clients[socket.uuid];
@@ -125,21 +145,36 @@ setInterval(()=>{
         let previousPoint = data.body[0];
 
         let nextPoint = {
-            x: data.speed * Math.cos(data.heading) + previousPoint.x,
-            y: data.speed * Math.sin(data.heading) + previousPoint.y,
+            x: data.speed * dt * Math.cos(data.heading) + previousPoint.x,
+            y: data.speed * dt * Math.sin(data.heading) + previousPoint.y,
         } as SnakePoint;
-
-        console.log("heading", data.heading)
-        console.log("nextPos", nextPoint)
 
 
         nextPoint = clampPoint(nextPoint);
 
         data.body.unshift(nextPoint);
         data.body.pop();
+
+        for (let i = foodOrbs.length - 1; i >= 0; i--)
+        {
+            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < 20){
+                data.length += foodOrbs[i].value;
+
+                console.log(data.length);
+
+                foodOrbs.splice(i, 1);
+
+                while(data.body.length < Math.floor(data.length)){
+                    data.body.push(data.body[-1]);
+                }
+            }
+        }            
     })
 
-    broadcast(JSON.stringify({method: "update", data: clients}));
+    broadcast(JSON.stringify({method: "update", data: clients, orbs: newOrbs}));
+
+    foodOrbs = foodOrbs.concat(newOrbs);
+    newOrbs = [];
 
     
 
@@ -186,9 +221,6 @@ function broadcast(message:string){
 }
 
 function findSpawnPos(){
-
-    return {x:0, y:0};
-
     return {x:Math.random() * mapWidth, y:Math.random() * mapHeight};
 }
 
@@ -208,3 +240,12 @@ function clampPoint(point:SnakePoint): SnakePoint{
 function clamp(num:number, min:number, max:number) {
     return Math.min(Math.max(num, min), max)
 };
+
+function makeOrb(value:number){
+    let orb = {x:Math.random() * mapWidth, y:Math.random() * mapHeight, value: value} as FoodOrb;
+    newOrbs.push(orb);
+}
+
+function pointDist(x1:number, y1:number, x2:number, y2:number){
+    return Math.abs(Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2)))
+}
