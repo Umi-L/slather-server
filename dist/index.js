@@ -106,8 +106,12 @@ setInterval(() => {
         nextPoint = clampPoint(nextPoint);
         data.body.unshift(nextPoint);
         data.body.pop();
+    });
+    wss.clients.forEach((_socket) => {
+        let socket = _socket;
+        let data = clients[socket.uuid];
         for (let i = foodOrbs.length - 1; i >= 0; i--) {
-            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, nextPoint.x, nextPoint.y) < data.radius * 2 + 10) {
+            if (pointDist(foodOrbs[i].x, foodOrbs[i].y, data.body[0].x, data.body[0].y) < data.radius * 2 + 10) {
                 data.length += foodOrbs[i].value;
                 data.radius = defaultRadius + data.length / 2;
                 foodOrbs.splice(i, 1);
@@ -116,10 +120,6 @@ setInterval(() => {
                 }
             }
         }
-    });
-    wss.clients.forEach((_socket) => {
-        let socket = _socket;
-        let data = clients[socket.uuid];
         wss.clients.forEach((_ws) => {
             let ws = _ws;
             if (ws.uuid != socket.uuid) {
